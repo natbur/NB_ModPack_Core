@@ -17,6 +17,8 @@ namespace NB_ModPack_Core
         public string costStuffCount;
         public string menuHidden;
 
+        public List<StatModifier> statBases;
+
         // Resarch prereqs
         public List<ResearchProjectDef> researchPrerequisites;
 
@@ -61,6 +63,7 @@ namespace NB_ModPack_Core
             var setStuffCount = !costStuffCount.NullOrEmpty();
             var setMenuHidden = !menuHidden.NullOrEmpty();
             var setResearch = researchPrerequisites != null;
+            var setStats = statBases != null;
 
             foreach (var targetDef in GetDefs<BuildableDef>())
             {
@@ -80,6 +83,18 @@ namespace NB_ModPack_Core
                 if (setResearch)
                 {
                     targetDef.researchPrerequisites = researchPrerequisites;
+                }
+                if(setStats)
+                {
+                    foreach(var statMod in statBases)
+                    {
+                        var curStat = targetDef.statBases.Find(s => s.stat == statMod.stat);
+                        if(curStat != null)
+                        {
+                            targetDef.statBases.Remove(curStat);
+                        }
+                        targetDef.statBases.Add(statMod);
+                    }
                 }
             }
 
