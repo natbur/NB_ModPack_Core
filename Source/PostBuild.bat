@@ -3,7 +3,7 @@ REM This is a local file copy after build.  Get it once and your .gitnore
 REM should handle it after that.  Make all your local copies at the end.
 
 REM Set this to your local RimWorld install path and CCL Assemblies directory
-Set InstalledCCLAssemblies="C:\Users\Nathan Burke\Downloads\Rimworld\Modpack\Mods\NB_ModPack_Core\Assemblies"
+Set InstalledCCLAssemblies="..\Assemblies"
 
 if NOT EXIST %InstalledCCLAssemblies% (
     echo Missing or invalid copy target:
