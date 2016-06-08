@@ -1,12 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Linq;
-using System.Text;
 using System.Xml;
-using System.Xml.Linq;
 
-using RimWorld;
 using Verse;
 
 namespace NB_ModPack_Core
@@ -70,33 +66,14 @@ namespace NB_ModPack_Core
     {
         [Unsaved]
         private XmlNode xmlRoot;
+
+        [Unsaved]
         private Type targetType;
+
+        [Unsaved]
         private MethodInfo getNamed;
 
         #region Helpers
-        public static Type GetRefType(XmlNode xmlRoot, string attributeName = "type", bool checkDef = true)
-        {
-            XmlAttribute xmlAttribute = xmlRoot.Attributes[attributeName];
-            if (xmlAttribute == null)
-            {
-                return null;
-            }
-
-            Type T = GenTypes.GetTypeInAnyAssembly(xmlAttribute.Value);
-            if (T == null)
-            {
-                Log.Error("Could not find type named " + xmlAttribute.Value + " from node " + xmlRoot.OuterXml);
-                return null;
-            }
-
-            if (checkDef && (!T.IsSubclassOf(typeof(Def)) && T != typeof(Def)))
-            {
-                return null;
-            }
-
-            return T;
-        }
-
         private Def GetNamedSilentFail(string name)
         {
             if (this.getNamed == null)
@@ -109,37 +86,10 @@ namespace NB_ModPack_Core
             return (Def)getNamed.Invoke(null, new object[] { name });
         }
 
-        public void StripComments(XmlNode xmlRoot)
-        {
-            XmlNodeList nodes = xmlRoot.SelectNodes("//comment()");
-            foreach (XmlNode node in nodes.Cast<XmlNode>().ToArray())
-            {
-                node.ParentNode.RemoveChild(node);
-            }
-        }
         #endregion
 
         #region XmlLoading
-
-        public void LoadDataFromXmlCustom(XmlNode xmlRoot)
-        {
-            // Abuse the DEF system a little bit
-            // since we don't actually need to load anything here
-            try
-            {
-                defName = xmlRoot.SelectSingleNode("defName").InnerText;
-            }
-            catch
-            {
-                // Since we unload after we're done, we don't care if we don't have a defname
-                defName = Guid.NewGuid().ToString();
-            }
-
-            // Log.Message("Custom XML Loader invoked\n");
-            this.xmlRoot = xmlRoot;
-            targetType = GetRefType(xmlRoot);
-        }
-
+        
         public Def LoadProperties(XmlNode properties)
         {
             try
@@ -207,9 +157,7 @@ namespace NB_ModPack_Core
                     }
                 }
 
-                ResolveOptionalNodes(xmlRoot, allDefNames);
-                ResolveIFModNodes(xmlRoot, allDefNames);
-                ResolveIFNodes(xmlRoot, allDefNames);
+                XmlHelper.ResolveOptionalNodes(xmlRoot, allDefNames);
             }
             catch (Exception ex)
             {
@@ -219,96 +167,25 @@ namespace NB_ModPack_Core
             }
         }
 
-        public void ResolveNodes(XmlNode xmlRoot, string selector, string removeAttribute, Predicate<XmlNode> Keep)
-        {
-            XmlNodeList nodes = xmlRoot.SelectNodes(selector);
-
-            foreach (XmlNode node in nodes)
-            {
-                if (Keep(node))
-                {
-                    if (!string.IsNullOrEmpty(removeAttribute))
-                    {
-                        node.Attributes.Remove(node.Attributes[removeAttribute]);
-                    }
-                }
-                else
-                {
-                    if (node == xmlRoot)
-                    {
-                        xmlRoot.RemoveAll();
-                        break;
-                    }
-
-                    node.ParentNode.RemoveChild(node);
-                }
-            }
-        }
-
-        public void ResolveOptionalNodes(XmlNode xmlRoot, ICollection<string> AllDefNames)
-        {
-            //< !--Try to process tag, ignore errors -->
-            // < li optional />
-            // <WoolCloth optional />
-            ResolveNodes(xmlRoot,
-                "//*[@optional]",
-                "optional",
-                n => AllDefNames.Contains(n.InnerText) || (n.Name != "li" && AllDefNames.Contains(n.Name)));
-        }
-
-        public void ResolveIFNodes(XmlNode xmlRoot, ICollection<string> AllDefNames)
-        {
-            //< !--If a Def exists, process tag -->
-            //< TAG ifExists = "" />
-            ResolveNodes(xmlRoot,
-                "//*[@ifExists]",
-                "ifExists",
-                n => AllDefNames.Contains(n.Attributes["ifExists"].Value));
-
-            // < !--If a Def doesn't exist, process tag -->
-            // < TAG ifNExists = "" />
-            ResolveNodes(xmlRoot,
-                "//*[@ifNExists]",
-                "ifNExists",
-                n => !AllDefNames.Contains(n.Attributes["ifNExists"].Value));
-        }
-
-        public void ResolveIFModNodes(XmlNode xmlRoot, ICollection<string> AllDefNames)
-        {
-            //< !--If a mod exists, process tag -->
-            //< TAG ifModExists = "" />
-            ResolveNodes(xmlRoot,
-                "//*[@ifModExists]",
-                "ifModExists",
-                n => LoadedModManager.LoadedMods.SingleOrDefault(m => m.name == n.Attributes["ifModExists"].Value) != null);
-
-            // < !--If a mod doesn't exist, process tag -->
-            // < TAG ifModNExists = "" />
-            ResolveNodes(xmlRoot,
-                "//*[@ifModNexists]",
-                "ifModNexists",
-                n => LoadedModManager.LoadedMods.SingleOrDefault(m => m.name == n.Attributes["ifModNexists"].Value) == null);
-        }
         #endregion
 
-        public override void ResolveReferences()
+        #region Def updating
+        public void UpdateTargetDefs()
         {
-            base.ResolveReferences();
-            // **********************************************************************
-            // Not exacly resolving references here, but this is the current callback
-            // avaialbe that occurs after all defs have been loaded
-            // If a hook were avialable between LoadAllDefs and CrossRef.Resolve, 
-            // that would be a better spot
-            // **********************************************************************
+            // Log.Message("Custom XML Loader invoked\n");
 
             // Remove comments so we don't have to worry about them later
-            StripComments(xmlRoot);
+            XmlHelper.StripComments(xmlRoot);
 
-            // Process all optiona/if attributes
+            // Get the type of Def that we're updating
+            targetType = XmlHelper.GetRefType(xmlRoot);
+
+            // Process all optional attributes
             HandleOptionalNodes(xmlRoot);
-            if(!xmlRoot.HasChildNodes)
+            if (!xmlRoot.HasChildNodes)
             {
-                // Root failed a check and was removed
+                // Root was purged during pre-parse
+                // Abort all updates
                 return;
             }
 
@@ -322,7 +199,7 @@ namespace NB_ModPack_Core
             List<Def> targets = LoadTargetDefs(targetsNode);
 
             // Update properties on target defs, raw xml used for update info
-            UpdateProperties(targets, parsed, propertiesNode);
+            UpdateFields(targets, parsed, propertiesNode);
 
             // We've done our damage, unload ourselves from RimWorld
             GenGeneric.InvokeStaticMethodOnGenericType(typeof(DefDatabase<>), typeof(PartialDef), "Remove", this);
@@ -330,23 +207,28 @@ namespace NB_ModPack_Core
             // Log.Message(string.Format("Parsed Xml: {0}", xmlRoot.OuterXml));
         }
 
-        private void UpdateProperties(IEnumerable<Def> targets, Def source, XmlNode properties)
+        private void UpdateFields(IEnumerable<Def> targets, Def source, XmlNode properties)
         {
+            // Loop through all the fields on the parsed(source) Def
             foreach (FieldInfo sourceField in source.GetType().GetFields(GenGeneric.BindingFlagsAll))
             {
+                // Check if this node should be updated, and get append mode for lists/dicts
                 bool append;
                 if (ShouldUpdate(sourceField, properties, out append))
                 {
+                    // Update all of the targets
                     foreach (Def target in targets)
                     {
-                        FieldInfo targetField = target.GetType().GetField(sourceField.Name, GenGeneric.BindingFlagsAll);
+                        // RW doesn't care if it's private/public, so neither do we
+                        FieldInfo targetField = target.GetType().GetField(sourceField.Name, GenGeneric.BindingFlagsAll | BindingFlags.IgnoreCase);
+
+                        // Sanity checks
                         if (targetField == null)
                         {
                             Log.Error(string.Format("Target {0} on {1} doesn't exist", targetField.Name, target.defName));
                             continue;
                         }
-
-                        if (sourceField.FieldType != targetField.FieldType)
+                        else if (sourceField.FieldType != targetField.FieldType)
                         {
                             Log.Error(string.Format("Source and target field types differ {1}: {2}", sourceField.Name, targetField.Name));
                             continue;
@@ -354,15 +236,18 @@ namespace NB_ModPack_Core
 
                         if (append)
                         {
-                            // Log.Message(string.Format("Appending to field {0}", targetField.Name));
+                            // Both Lists and Dicts can be appended, so figure out which we're dealing with
                             if (typeof(System.Collections.IList).IsAssignableFrom(sourceField.FieldType))
                             {
                                 var sourceList = (System.Collections.IList)sourceField.GetValue(source);
                                 var targetList = (System.Collections.IList)targetField.GetValue(target);
 
+                                // Constructors for Defs don't initialize lists
                                 if (targetList == null)
+                                {
                                     targetField.SetValue(target, Activator.CreateInstance(targetField.FieldType));
-                                targetList = (System.Collections.IList)targetField.GetValue(target);
+                                    targetList = (System.Collections.IList)targetField.GetValue(target);
+                                }
 
                                 foreach (var item in sourceList)
                                 {
@@ -373,9 +258,13 @@ namespace NB_ModPack_Core
                             {
                                 var sourceDict = (System.Collections.IDictionary)sourceField.GetValue(source);
                                 var targetDict = (System.Collections.IDictionary)targetField.GetValue(target);
+
+                                // Constructors for Defs don't initialize dicts
                                 if (targetDict == null)
+                                {
                                     targetField.SetValue(target, Activator.CreateInstance(targetField.FieldType));
-                                targetDict = (System.Collections.IDictionary)targetField.GetValue(target);
+                                    targetDict = (System.Collections.IDictionary)targetField.GetValue(target);
+                                }
 
                                 foreach (var key in sourceDict.Keys)
                                 {
@@ -390,6 +279,7 @@ namespace NB_ModPack_Core
                         }
                         else
                         {
+                            // Overwrite existing property value
                             try
                             {
                                 targetField.SetValue(target, sourceField.GetValue(source));
@@ -408,26 +298,46 @@ namespace NB_ModPack_Core
         {
             append = false;
             XmlNode propNode = properties.SelectSingleNode(targetField.Name);
+            // If the field doesn't exist in the processed xml, don't update
             if (propNode == null)
             {
                 return false;
             }
-            
-            if (propNode.Attributes["mode"] != null && propNode.Attributes["mode"].Value == "append")
-            {
-                if (typeof(System.Collections.IList).IsAssignableFrom(targetField.FieldType) || typeof(System.Collections.IDictionary).IsAssignableFrom(targetField.FieldType))
-                {
-                    append = true;
-                }
-            }
+
+            // Otherwise, check if it's a collection and we should append the new values
+            append = propNode.GetAttributeValue("mode") == "append" && typeof(System.Collections.ICollection).IsAssignableFrom(targetField.FieldType);
 
             return true;
         }
+        #endregion
 
-        #region Other Overrides
+        #region Overrides
+        public void LoadDataFromXmlCustom(XmlNode xmlRoot)
+        {
+            // Abuse the DEF system a little bit
+            // since we don't actually need to load anything here
+            try
+            {
+                defName = xmlRoot.SelectSingleNode("defName").InnerText;
+            }
+            catch
+            {
+                // Since we unload after we're done, we don't care if we don't have a defname
+                defName = Guid.NewGuid().ToString();
+            }
+
+            this.xmlRoot = xmlRoot;
+        }
+
         public override void PostLoad()
         {
             base.PostLoad();
+            LongEventHandler.ExecuteWhenFinished(UpdateTargetDefs);
+        }
+
+        public override void ResolveReferences()
+        {
+            base.ResolveReferences();
         }
 
         public override IEnumerable<string> ConfigErrors()
