@@ -234,3 +234,5 @@ _Pvt_Extensions
 
 # FAKE - F# Make
 .fake/
+/Defs/Floors.xml
+/ConsoleApplication1

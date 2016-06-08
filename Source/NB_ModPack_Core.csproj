@@ -45,11 +45,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="UpdateDef.cs" />
-    <Compile Include="RecipeUpdateDef.cs" />
-    <Compile Include="TerrainUpdateDef.cs" />
-    <Compile Include="BuildableUpdateDef.cs" />
-    <Compile Include="ThingUpdateDef.cs" />
+    <Compile Include="PartialDef.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
